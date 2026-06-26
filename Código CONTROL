@@ -1,0 +1,62 @@
+//código para Control
+#include <esp_now.h>
+#include <WiFi.h>
+
+
+uint8_t broadcastAddress[] = {0x04, 0xB2, 0x47, 0x97, 0xB3, 0x94};
+
+const int btnAdelante  = 2;
+const int btnAtras     = 4;
+const int btnIzquierda = 22;
+const int btnDerecha   = 23;
+
+typedef struct struct_message {
+  bool adelante;
+  bool atras;
+  bool izquierda;
+  bool derecha;
+} struct_message;
+
+struct_message datosAEnviar;
+esp_now_peer_info_t peerInfo;
+
+void OnDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "OK" : "Error envio");
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(btnAdelante,  INPUT);
+  pinMode(btnAtras,     INPUT);
+  pinMode(btnIzquierda, INPUT);
+  pinMode(btnDerecha,   INPUT);
+
+  WiFi.mode(WIFI_STA);
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error ESP-NOW");
+    return;
+  }
+
+  esp_now_register_send_cb(OnDataSent);
+
+  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Error emparejando");
+    return;
+  }
+}
+
+void loop() {
+  datosAEnviar.adelante   = digitalRead(btnAdelante)  == HIGH;
+  datosAEnviar.atras      = digitalRead(btnAtras)     == HIGH;
+  datosAEnviar.izquierda  = digitalRead(btnIzquierda) == HIGH;
+  datosAEnviar.derecha    = digitalRead(btnDerecha)   == HIGH;
+
+  esp_now_send(broadcastAddress, (uint8_t *)&datosAEnviar, sizeof(datosAEnviar));
+  delay(50);
+}
