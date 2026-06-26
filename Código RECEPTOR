@@ -1,0 +1,136 @@
+//Código esp RECEPTOR puente H robot
+
+#include <esp_now.h>
+#include <WiFi.h>
+#include <ESP32Servo.h>
+
+const int IN1 = 25;
+const int IN2 = 26;
+const int IN3 = 27;
+const int IN4 = 14;
+
+const int SERVO_PIN = 18;
+
+int velocidadA = 200;
+int velocidadB = 200;
+
+Servo miServo;
+int posicion = 90; // Posición inicial al centro
+
+typedef struct struct_message {
+  bool adelante;
+  bool atras;
+  bool izquierda;
+  bool derecha;
+} struct_message;
+
+struct_message datosRecibidos;
+
+// --- Secuencia del servo ---
+void secuenciaServo() {
+  // Centro → Izquierda → Centro → Derecha → Centro
+  miServo.write(90);  delay(500);
+  miServo.write(0);   delay(700);
+  miServo.write(90);  delay(500);
+  miServo.write(180); delay(700);
+  miServo.write(90);  delay(500);
+}
+
+void motorStop() {
+  analogWrite(IN1, 0); analogWrite(IN2, 0);
+  analogWrite(IN3, 0); analogWrite(IN4, 0);
+}
+
+void moverAdelante() {
+  analogWrite(IN1, velocidadA); analogWrite(IN2, 0);
+  analogWrite(IN3, velocidadB); analogWrite(IN4, 0);
+}
+
+void moverAtras() {
+  analogWrite(IN1, 0); analogWrite(IN2, velocidadA);
+  analogWrite(IN3, 0); analogWrite(IN4, velocidadB);
+}
+
+void girarIzquierda() {
+  analogWrite(IN1, 0);          analogWrite(IN2, velocidadA);
+  analogWrite(IN3, velocidadB); analogWrite(IN4, 0);
+}
+
+void girarDerecha() {
+  analogWrite(IN1, velocidadA); analogWrite(IN2, 0);
+  analogWrite(IN3, 0);          analogWrite(IN4, velocidadB);
+}
+
+void leerSerial() {
+  if (Serial.available() > 0) {
+    String comando = Serial.readStringUntil('\n');
+    comando.trim();
+
+    if (comando.length() >= 3) {
+      char motor = comando.charAt(0);
+      int velocidad = comando.substring(2).toInt();
+      velocidad = constrain(velocidad, 0, 255);
+
+      if (motor == 'A' || motor == 'a') {
+        velocidadA = velocidad;
+        Serial.print("Motor A velocidad: ");
+        Serial.println(velocidadA);
+      } 
+      else if (motor == 'B' || motor == 'b') {
+        velocidadB = velocidad;
+        Serial.print("Motor B velocidad: ");
+        Serial.println(velocidadB);
+      }
+      else {
+        Serial.println("Comando no reconocido. Usa: A 180 o B 200");
+      }
+    } else {
+      Serial.println("Comando no reconocido. Usa: A 180 o B 200");
+    }
+  }
+}
+
+void OnDataRecv(const esp_now_recv_info *info, const uint8_t *incomingData, int len) {
+  memcpy(&datosRecibidos, incomingData, sizeof(datosRecibidos));
+
+  if      (datosRecibidos.adelante)   moverAdelante();
+  else if (datosRecibidos.atras)      moverAtras();
+  else if (datosRecibidos.izquierda)  girarIzquierda();
+  else if (datosRecibidos.derecha)    girarDerecha();
+  else                                motorStop();
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  motorStop();
+
+  // Inicializar servo
+  miServo.attach(SERVO_PIN);
+  miServo.write(90); // Posición central al arrancar
+
+  WiFi.mode(WIFI_STA);
+  delay(100);
+
+  Serial.print(">>> MAC de este RECEPTOR: ");
+  Serial.println(WiFi.macAddress());
+  Serial.println("Listo. Comandos: A 180 o B 200 (0-255)");
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error ESP-NOW");
+    return;
+  }
+
+  esp_now_register_recv_cb(OnDataRecv);
+
+  // Secuencia de inicio para confirmar que el servo funciona
+  Serial.println("Ejecutando secuencia del servo...");
+  secuenciaServo();
+  Serial.println("Servo listo.");
+}
+
+void loop() {
+  leerSerial();
+}
